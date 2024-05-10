@@ -1,61 +1,68 @@
 import { useState } from 'react'
 import './App.css'
-import Bold from './mark-components/Bold'
-import Italic from './mark-components/Italic'
-import Heading from './mark-components/Heading'
-import Quote from './mark-components/Quote'
-import { atxHeading, indentCodeBlock } from './bin/rules'
-import { parse } from './converter'
+import { StackItem, parse } from './converter'
+import { Code, Heading, Paragraph } from './mark-components/LeafBlocks'
+import { Blockquote, ListItem, UnorderedList } from './mark-components/Blocks'
 
-// function buildCompTree(root: MarkNode) {
-//     switch (root.kind) {
-//         case "bold": {
-//             return (
-//                 <Bold hasClosing={!root.unclosed} hasOpening={!root.unopened} isMarksShown={true}>
-//                     {root.children.map((s) => buildCompTree(s))}
-//                 </Bold>
-//             )
-//         }
-//
-//         case "quote": {
-//             return (
-//                 <Quote isContinued={root.isContunue} isMarksShown={true} level={root.level}>
-//                     {root.children.map((s) => buildCompTree(s))}
-//                 </Quote>
-//             )
-//         }
-//
-//         case "heading": {
-//             return (
-//                 <Heading level={root.level} isMarksShown={true}>
-//                     {root.children.map((s) => buildCompTree(s))}
-//                 </Heading>
-//             )
-//         }
-//
-//         case "italic": {
-//             return (
-//                 <Italic hasClosing={!root.unclosed} hasOpening={!root.unopened} isMarksShown={true}>
-//                     {root.children.map((s) => buildCompTree(s))}
-//                 </Italic>
-//             )
-//         }
-//
-//         case "paragraph": {
-//             return (
-//                 <p>
-//                     {root.children.map((s) => buildCompTree(s))}
-//                 </p>
-//             )
-//         }
-//
-//         default: {
-//             return <span>
-//                 {root.content}
-//             </span>
-//         }
-//     }
-// }
+function buildCompTree(root: StackItem) {
+    switch (root.tag.type) {
+        case "indent-code-block": {
+            return (
+                <Code>
+                    {root.tag.content}
+                </Code>
+            )
+        }
+
+        case "blockquote": {
+            return (
+                <Blockquote>
+                    {root.children.map((s) => buildCompTree(s))}
+                </Blockquote>
+            )
+        }
+
+        case "list": {
+            return (
+                <UnorderedList>
+                    {root.children.map((s) => buildCompTree(s))}
+                </UnorderedList>
+            )
+        }
+
+        case "list-item": {
+            return (
+                <ListItem>
+                    {root.children.map((s) => buildCompTree(s))}
+                </ListItem>
+            )
+        }
+
+        case "paragraph": {
+            return (
+                <Paragraph>
+                    {root.tag.content}
+                </Paragraph>
+            )
+        }
+
+        case "heading": {
+            return (
+                <Heading level={root.tag.level}>
+                    {root.tag.content}
+                </Heading>
+            )
+        }
+
+        case "document": {
+            return (
+                <div>
+                    {root.children.map((s) => buildCompTree(s))}
+                </div>
+            )
+        }
+    }
+}
 
 function App() {
     const [text, setText] = useState("")
@@ -70,6 +77,7 @@ function App() {
                 value={text}
                 onChange={(e) => setText(e.currentTarget.value)}
             ></textarea>
+            {parsed[0] && buildCompTree(parsed[0])}
         </div>
     )
 }
