@@ -37,16 +37,22 @@ namespace Entity {
     export interface List {
         architype: "block"
         type: "list"
-        indent: number
     }
 
     export interface ListItem {
         nomerge?: boolean
         architype: "block"
         type: "list-item"
+        indent: number
     }
 
-    export type LeafBlockTag = Paragraph | Heading | IndentCodeBlock | CodeBlock
+    export interface Hr {
+        architype: "leaf-block"
+        nomerge: true 
+        type: "hr"
+    }
+
+    export type LeafBlockTag = Paragraph | Heading | IndentCodeBlock | CodeBlock | Hr
 
     export type BlockTag = Blockquote | List | ListItem | Document
 

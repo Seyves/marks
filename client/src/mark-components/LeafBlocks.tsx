@@ -14,6 +14,12 @@ export function Code({ children }: Props) {
     )
 }
 
+export function Hr() {
+    return (
+        <hr/>
+    )
+}
+
 export function Paragraph({ children }: Props) {
     return (
         <p>

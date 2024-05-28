@@ -1,11 +1,17 @@
 import { useState } from 'react'
 import './App.css'
 import { StackItem, parse } from './converter'
-import { Code, Heading, Paragraph } from './mark-components/LeafBlocks'
+import { Code, Heading, Hr, Paragraph } from './mark-components/LeafBlocks'
 import { Blockquote, ListItem, UnorderedList } from './mark-components/Blocks'
 
 function buildCompTree(root: StackItem) {
     switch (root.tag.type) {
+        case "hr": {
+            return (
+                <Hr/>
+            )
+        }
+
         case "indent-code-block": {
             return (
                 <Code>
