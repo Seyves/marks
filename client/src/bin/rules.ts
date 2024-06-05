@@ -1,5 +1,12 @@
 import { Stack } from "../converter"
-import Entity from "./definitions"
+import {
+    createBlockqoute,
+    createHeading,
+    createList,
+    createListItem,
+    createParagraph,
+    createThematicBreak,
+} from "./definitions"
 
 export const SYMBOLS = {
     SPACE: " ",
@@ -7,15 +14,59 @@ export const SYMBOLS = {
     NEWLINE: "\n",
 
     STAR: "*",
+    HASH: "#",
+    GREATER: ">",
     UNDERSCORE: "_",
     MINUS: "-",
     PLUS: "+",
     EQUAL: "=",
+    BACKTICK: "`",
 } as const
 
-type ParseResult = [Stack, number]
+type ParsedResult = [Stack, number]
+type BoolParsedResult = [boolean, number]
 
-export function parseUnorderedList(input: string, start: number, indentBefore: number): ParseResult {
+export function parseHeading(input: string, start: number): ParsedResult {
+    let hashEndDelta
+
+    for (hashEndDelta = 1; hashEndDelta + start < input.length; hashEndDelta++) {
+        if (input[start + hashEndDelta] !== SYMBOLS.HASH) break
+    }
+
+    const hashEnd = start + hashEndDelta
+
+    if (hashEndDelta <= 6 && input.length > hashEnd && input[hashEnd] === " ") {
+        return [[createHeading(hashEndDelta, "")], hashEnd]
+    }
+
+    return [[createParagraph("")], start - 1]
+}
+
+export function parseBlockquote(input: string, start: number): ParsedResult {
+    return [[createBlockqoute()], start]
+}
+
+export function parseCodeBlockEnd(input: string, start: number): BoolParsedResult {
+    if (input.length < start + 2) return [false, start]
+
+    if (input.slice(start, start + 3) !== SYMBOLS.BACKTICK.repeat(3)) return [false, start]
+
+    for (let i = start + 3; i < input.length; i++) {
+        switch (input[i]) {
+            case SYMBOLS.TAB:
+            case SYMBOLS.SPACE:
+                break
+            case SYMBOLS.NEWLINE:
+                return [true, i]
+            default:
+                return [false, start]
+        }
+    }
+
+    return [false, start]
+}
+
+export function parseUnorderedList(input: string, start: number, indentBefore: number): ParsedResult {
     let indentToMerge
 
     for (indentToMerge = start + 2; indentToMerge < input.length; indentToMerge++) {
@@ -35,33 +86,19 @@ export function parseUnorderedList(input: string, start: number, indentBefore: n
         end = start + indentToMerge - 2
     }
 
-    const list: Entity.List = {
-        architype: "block",
-        type: "list",
-    }
-
-    const listItem: Entity.ListItem = {
-        architype: "block",
-        type: "list-item",
-        nomerge: true,
-        indent: indent + indentBefore
-    }
-
-    const items: Stack = [
-        { tag: list, children: [] },
-        { tag: listItem, children: [] },
+    return [
+        [createList(), createListItem(indent + indentBefore)],
+        end + 1,
     ]
-
-    return [items, end+1] as const
 }
 
 type ThematicBreakSymbol = typeof SYMBOLS.MINUS | typeof SYMBOLS.UNDERSCORE | typeof SYMBOLS.STAR
 
-export function parseHr(
+export function parseThematicBreak(
     input: string,
     start: number,
     symbol: ThematicBreakSymbol
-): ParseResult | null {
+): ParsedResult | null {
     let symbolCount = 1
 
     let i
@@ -83,14 +120,7 @@ export function parseHr(
 
     if (symbolCount < 3) return null
 
-    return [[{
-        tag: {
-            type: "hr",
-            nomerge: true,
-            architype: "leaf-block"
-        },
-        children: []
-    }], i - 1]
+    return [[createThematicBreak()], i - 1]
 }
 
 type SettextSymbol = typeof SYMBOLS.MINUS | typeof SYMBOLS.EQUAL
@@ -106,7 +136,7 @@ export function parseSettext(
     L: for (i = start + 1; i < input.length; i++) {
         switch (input[i]) {
             case symbol:
-                if (isBroken) return false 
+                if (isBroken) return false
                 continue
             case " ":
             case "\t":

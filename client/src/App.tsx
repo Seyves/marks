@@ -1,21 +1,30 @@
 import { useState } from 'react'
 import './App.css'
-import { StackItem, parse } from './converter'
+import { parse } from './converter'
 import { Code, Heading, Hr, Paragraph } from './mark-components/LeafBlocks'
 import { Blockquote, ListItem, UnorderedList } from './mark-components/Blocks'
+import Definitions from './bin/definitions'
 
-function buildCompTree(root: StackItem) {
-    switch (root.tag.type) {
-        case "hr": {
+function buildCompTree(root: Definitions.Tag) {
+    switch (root.type) {
+        case "thematic-break": {
             return (
                 <Hr/>
+            )
+        }
+
+        case "code-block": {
+            return (
+                <Code>
+                    {root.content}
+                </Code>
             )
         }
 
         case "indent-code-block": {
             return (
                 <Code>
-                    {root.tag.content}
+                    {root.content}
                 </Code>
             )
         }
@@ -47,15 +56,15 @@ function buildCompTree(root: StackItem) {
         case "paragraph": {
             return (
                 <Paragraph>
-                    {root.tag.content}
+                    {root.content}
                 </Paragraph>
             )
         }
 
         case "heading": {
             return (
-                <Heading level={root.tag.level}>
-                    {root.tag.content}
+                <Heading level={root.level}>
+                    {root.content}
                 </Heading>
             )
         }
@@ -78,12 +87,12 @@ function App() {
     return (
         <div>
             <textarea
-                id=""
+            id=""
                 name=""
                 value={text}
                 onChange={(e) => setText(e.currentTarget.value)}
             ></textarea>
-            {parsed[0] && buildCompTree(parsed[0])}
+            {parsed.get(0) && buildCompTree(parsed.get(0))}
         </div>
     )
 }
