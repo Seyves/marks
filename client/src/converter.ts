@@ -1,27 +1,16 @@
-import Definitions, {
-    createBlockqoute,
-    createCodeBlock,
-    createDocument,
-    createHeading,
-    createIndentedCodeBlock,
-    createList,
-    createListItem,
-    createParagraph,
-} from "./bin/definitions"
-import { SYMBOLS, parseBlockquote, parseHeading, parseThematicBreak, parseSettext, parseUnorderedList, parseCodeBlockEnd } from "./bin/rules"
-
-export type Stack = Definitions.Tag[]
+import * as Nodes from "./bin/definitions"
+import { SYMBOLS, parseBlockquote, parseHeading, parseThematicBreak, parseSettext, parseUnorderedList, parseCodeBlockContinuation } from "./bin/rules"
 
 class NodeStack {
     constructor() {
-        this.arr = [createDocument()]
+        this.arr = [new Nodes.MarkDocument()]
     }
 
     closeUntil(idx: number) {
         for (let i = this.arr.length - 1; i >= idx; i--) {
             const parent = this.arr[i - 1]
 
-            if (!("children" in parent)) throw new Error("Attempt to close node with no children")
+            if (!(parent instanceof Nodes.ParentMarkNode)) throw new Error("Attempt to close node with no children")
 
             parent.children.push(this.arr[i])
 
@@ -34,22 +23,18 @@ class NodeStack {
 
         for (i = 1; i < Math.min(this.length(), anotherStack.length()); i++) {
             if (
-                this.get(i).type !== anotherStack.get(i).type ||
+                this.get(i).constructor !== anotherStack.get(i).constructor ||
                 (!ignoreMergeble && !anotherStack.get(i).mergeable)
             ) {
                 break
             }
         }
 
-        if (anotherStack.length() === i) {
-            for (; i < this.length(); i++) {
-                if (this.get(i).type !== "list" && this.get(i).type !== "list-item") {
-                    break
-                }
-            }
-        }
-
         return i
+    }
+
+    find<K extends Nodes.MarkNode>(cl: new (...args: any) => K): K | undefined {
+        return this.arr.find((node) => node instanceof cl) as K | undefined
     }
 
     length() {
@@ -60,7 +45,7 @@ class NodeStack {
         return this.arr[idx]
     }
 
-    push(...nodes: Definitions.Tag[]) {
+    push(...nodes: Nodes.MarkNode[]) {
         this.arr.push(...nodes)
     }
 
@@ -72,7 +57,7 @@ class NodeStack {
         return this.arr[this.arr.length - 1]
     }
 
-    arr: Definitions.Tag[]
+    arr: Nodes.MarkNode[]
 }
 
 function countIndent(input: string, start: number) {
@@ -102,48 +87,46 @@ function processIndent(
 ) {
     let remainingIndent = indent
 
-    const nodes: Stack = []
+    const result: Nodes.MarkNode[] = []
 
-    for (let i = 0; i < stack.arr.length; i++) {
-        const stackTag = stack.get(i)
-        const lineTag = lineStack.get(i)
+    const point = stack.findBreakpoint(lineStack, true)
 
-        if (lineTag) {
-            if (stackTag.type !== lineTag.type) {
-                break
-            }
-            continue
+    if (point === lineStack.length()) {
+        for (let i = point; i < stack.arr.length; i++) {
+            const node = stack.get(i)
+
+            if (node instanceof Nodes.List) continue
+
+            if (!(node instanceof Nodes.ListItem)) break
+
+            if (node.indent > remainingIndent) break
+
+            result.push(new Nodes.List())
+            result.push(new Nodes.ListItem(node.indent, true))
+
+            remainingIndent -= node.indent
         }
-
-        if (stackTag.type !== "list-item") continue
-
-        if (stackTag.indent > remainingIndent) break
-
-        nodes.push(createList())
-        nodes.push(createListItem(stackTag.indent, true))
-
-        remainingIndent -= stackTag.indent
     }
 
     if (!isLazyConPossible && remainingIndent >= 4) {
-        nodes.push(createIndentedCodeBlock(" ".repeat(remainingIndent - 4)))
+        result.push(new Nodes.IndentedCodeBlock(" ".repeat(remainingIndent - 4)))
     }
 
-    return [nodes, remainingIndent] as const
+    return [result, remainingIndent] as const
 }
 
 export function parseNewLine(input: string, start: number, stack: NodeStack, isLazyConPossible: boolean, isSetextHeadingPossible: boolean) {
     const line = new NodeStack()
 
-    let prevIndent = 0
-    const listIndent: number[] = []
+    let indentBefore = 0
 
     let i: number
 
     for (i = start; i < input.length; i++) {
-        //checking for opened code block
+        const stackContext = stack.context()
+
         if (
-            stack.context().type === "code-block" &&
+            stackContext instanceof Nodes.CodeBlock &&
             stack.length() === line.length() + 1
         ) {
             const point = stack.findBreakpoint(line, true)
@@ -151,34 +134,41 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
             if (point === line.length()) {
                 const [indent, indEnd] = countIndent(input, i)
 
-                //checking if we closing code block
                 if (indent < 4) {
-                    const [isEndOfCodeBlock, end] = parseCodeBlockEnd(input, indEnd)
-
-                    if (isEndOfCodeBlock) {
-                        i = end
-                    } else {
-                        line.push(createCodeBlock(""))
-                    }
+                    const [parsedNodes, end] = parseCodeBlockContinuation(
+                        input,
+                        indEnd,
+                        stackContext.symbol,
+                        stackContext.length
+                    )
+                    line.push(...parsedNodes)
+                    i = end
                 } else {
-                    //else content is a part of the code block
-                    line.push(createCodeBlock(""))
+                    line.push(new Nodes.CodeBlock(
+                        stackContext.symbol,
+                        stackContext.length,
+                        "",
+                        false
+                    ))
                 }
             }
         }
 
+        let wasIndentBeforeSet = false
+
         const context = line.context()
-
-        let wasIndentSet = false
-
-        const isBlockContext = !context || Definitions.BLOCKTYPES.includes(context.type)
 
         const char = input[i]
 
         if (char === "\n") break
 
-        if (context && Definitions.CONTENTTYPES.includes(context.type)) {
-            if (!context.opening) context.content += char;
+        if (context instanceof Nodes.ContentMarkNode) {
+            if (context instanceof Nodes.CodeBlock) {
+                if (!context.opening) context.content += char
+            } else {
+                context.content += char
+            }
+
             continue;
         }
 
@@ -186,31 +176,26 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
 
         const beforeSpace = input.length > i + 1 && input[i + 1] === " "
 
-        let nodes: Stack = []
+        let nodes: Nodes.MarkNode[] = []
         let end = i
 
         switch (char) {
             //indent
             case SYMBOLS.TAB:
             case SYMBOLS.SPACE: {
-                if (stack.context() && stack.context().type === "code-block") {
-                    break
-                }
+                if (stack.context() instanceof Nodes.CodeBlock) break
 
                 const [indent, endOfIndent] = countIndent(input, i)
 
-                if (isBlockContext) {
-                    const processed = processIndent(indent, stack, line, isLazyConPossible)
+                if (Nodes.isBlockNode(context)) {
+                    [nodes, indentBefore] = processIndent(indent, stack, line, isLazyConPossible)
 
-                    prevIndent = processed[1]
-                    wasIndentSet = true
+                    wasIndentBeforeSet = true
 
-                    console.log("Setting prev indent: ", prevIndent)
+                    console.log("Setting prev indent: ", indentBefore)
 
-                    if (processed[0].length > 0) {
-                        nodes = processed[0]
-                    } else if (isLazyConPossible && indent >= 4) {
-                        nodes = [createParagraph("")]
+                    if (nodes.length === 0 && isLazyConPossible && indent >= 4) {
+                        nodes = [new Nodes.Paragraph()]
                     }
                 }
 
@@ -218,12 +203,33 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
 
                 break
             }
-            case SYMBOLS.BACKTICK: {
-                if (input.length > i + 2 && input.slice(i, i + 3) === SYMBOLS.BACKTICK.repeat(3)) {
-                    nodes = [createCodeBlock("", true)]
-                    end = i + 2
+            case SYMBOLS.TILDA: {
+                let j: number
+
+                for (j = i + 1; j < input.length; j++) {
+                    if (input[j] !== SYMBOLS.TILDA) break
+                }
+
+                if (j - i > 2) {
+                    nodes = [new Nodes.CodeBlock(SYMBOLS.TILDA, j - i, "", true)]
+                    end = j - 1
                 } else {
-                    nodes = [createParagraph(char)]
+                    nodes = [new Nodes.Paragraph(char)]
+                }
+                break
+            }
+            case SYMBOLS.BACKTICK: {
+                let j: number
+
+                for (j = i + 1; j < input.length; j++) {
+                    if (input[j] !== SYMBOLS.BACKTICK) break
+                }
+
+                if (j - i > 2) {
+                    nodes = [new Nodes.CodeBlock(SYMBOLS.BACKTICK, j - i, "", true)]
+                    end = j - 1
+                } else {
+                    nodes = [new Nodes.Paragraph(char)]
                 }
                 break
             }
@@ -243,7 +249,7 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
             }
             case SYMBOLS.STAR:
                 //chech for thematic break
-                if (isBlockContext) {
+                if (Nodes.isBlockNode(context)) {
                     const hrParseResult = parseThematicBreak(input, i, SYMBOLS.STAR)
 
                     if (hrParseResult) {
@@ -254,15 +260,15 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
 
                 //else we know it's probably list
                 if (beforeSpace) {
-                    [nodes, end] = parseUnorderedList(input, i, prevIndent)
+                    [nodes, end] = parseUnorderedList(input, i, indentBefore)
                 } else {
-                    nodes = [createParagraph(char)]
+                    nodes = [new Nodes.Paragraph(char)]
                 }
 
                 break
             case SYMBOLS.UNDERSCORE: {
                 //chech for hr
-                if (isBlockContext) {
+                if (Nodes.isBlockNode(context)) {
                     const hrParseResult = parseThematicBreak(input, i, SYMBOLS.UNDERSCORE)
 
                     if (hrParseResult) {
@@ -271,36 +277,50 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
                     }
                 }
 
-                nodes = [createParagraph(char)]
+                nodes = [new Nodes.Paragraph(char)]
                 break
             }
             case SYMBOLS.EQUAL: {
                 if (!isSetextHeadingPossible) {
-                    nodes = [createParagraph(char)]
+                    nodes = [new Nodes.Paragraph(char)]
                     break
                 }
 
                 const setextParseResult = parseSettext(input, i, SYMBOLS.EQUAL)
 
-                const sContext = stack.context()
-
-                if (setextParseResult && sContext.type === "paragraph") {
-                    const content = sContext.content
+                if (setextParseResult && stackContext instanceof Nodes.Paragraph) {
+                    const content = stackContext.content
 
                     stack.pop()
 
-                    stack.push(createHeading(1, content))
+                    stack.push(new Nodes.Heading(1, content))
 
                     end = setextParseResult[1]
                 } else {
-                    nodes = [createParagraph(char)]
+                    nodes = [new Nodes.Paragraph(char)]
                 }
 
                 break
             }
             case SYMBOLS.MINUS: {
+                //check for settext
+                if (isSetextHeadingPossible) {
+                    const setextParseResult = parseSettext(input, i, SYMBOLS.MINUS)
+
+                    if (setextParseResult && stackContext instanceof Nodes.Paragraph) {
+                        const content = stackContext.content
+
+                        stack.pop()
+
+                        stack.push(new Nodes.Heading(1, content))
+
+                        end = setextParseResult[1]
+
+                        break
+                    }
+                }
                 //chech for hr
-                if (isBlockContext) {
+                if (Nodes.isBlockNode(context)) {
                     const hrParseResult = parseThematicBreak(input, i, SYMBOLS.MINUS)
 
                     if (hrParseResult) {
@@ -308,29 +328,29 @@ export function parseNewLine(input: string, start: number, stack: NodeStack, isL
                         break
                     }
                 }
-
+                //check for list
                 if (beforeSpace) {
-                    [nodes, end] = parseUnorderedList(input, i, prevIndent)
+                    [nodes, end] = parseUnorderedList(input, i, indentBefore)
                 } else {
-                    nodes = [createParagraph(char)]
+                    nodes = [new Nodes.Paragraph(char)]
                 }
 
                 break
             }
             default: {
-                nodes = [createParagraph(char)]
+                nodes = [new Nodes.Paragraph(char)]
             }
         }
 
         line.push(...nodes)
         i = end
 
-        if (!wasIndentSet) {
-            prevIndent = 0
+        if (!wasIndentBeforeSet) {
+            indentBefore = 0
         }
     }
 
-    return [line, i + 1, listIndent] as const
+    return [line, i + 1] as const
 }
 
 export function parse(input: string) {
@@ -346,46 +366,40 @@ export function parse(input: string) {
 
         console.log("result line", JSON.stringify(line))
 
-        const j = stack.findBreakpoint(line)
+        let j = stack.findBreakpoint(line)
 
-        // let j
-        //
-        // for (j = 1; j < Math.min(stack.length(), line.length()); j++) {
-        //     if (stack.get(j).type !== line.get(j).type || !line.get(j).mergeable) {
-        //         break
-        //     }
-        // }
-        //
-        // if (line.length() === j) {
-        //     for (; j < stack.length(); j++) {
-        //         if (stack.get(j).type !== "list" && stack.get(j).type !== "list-item") {
-        //             break
-        //         }
-        //     }
-        // }
-
-        const breakpoint = line.get(j)
-        const stackBreakpoint = stack.get(j)
-
-        if (stackBreakpoint?.type === "code-block" && breakpoint && breakpoint.type === "code-block") {
-            stackBreakpoint.content += "\n" + breakpoint.content
-            stackBreakpoint.opening = false
-        }
-        else if (stackBreakpoint?.type === "indent-code-block" && (!breakpoint || breakpoint.type === "indent-code-block")) {
-            stackBreakpoint.content += "\n"
-
-            if (breakpoint && breakpoint.type === "indent-code-block") {
-                stackBreakpoint.content += breakpoint.content
+        if (line.length() === j) {
+            for (; j < stack.length(); j++) {
+                if (!(stack.get(j) instanceof Nodes.List) && !(stack.get(j) instanceof Nodes.ListItem)) {
+                    break
+                }
             }
-        } else if (lazy && breakpoint && breakpoint.type === "paragraph") {
+        }
+
+        const lPoint = line.get(j)
+        const sPoint = stack.get(j)
+
+        //merging code blocks
+        if (sPoint instanceof Nodes.CodeBlock && lPoint instanceof Nodes.CodeBlock) {
+            sPoint.content += "\n" + lPoint.content
+            sPoint.opening = false
+            //merging indent code blocks
+        } else if (sPoint instanceof Nodes.IndentedCodeBlock && !sPoint || sPoint instanceof Nodes.IndentedCodeBlock) {
+            sPoint.content += "\n"
+
+            if (lPoint instanceof Nodes.IndentedCodeBlock) {
+                sPoint.content += lPoint.content
+            }
+            //merging lazy continuation
+        } else if (lazy && lPoint instanceof Nodes.Paragraph) {
             let context = stack.context()
 
-            while ("children" in context && context.children.length > 0) {
+            while (context instanceof Nodes.ParentMarkNode && context.children.length > 0) {
                 context = context.children[context.children.length - 1]
             }
 
-            if (context.type === "paragraph") {
-                context.content += " " + breakpoint.content
+            if (context instanceof Nodes.Paragraph) {
+                context.content += " " + lPoint.content
             }
         } else {
             stack.closeUntil(j)
@@ -397,7 +411,7 @@ export function parse(input: string) {
 
         if (endOfLine > input.length - 1) break
 
-        const isLastItemParagraph = line.context().type === "paragraph"
+        const isLastItemParagraph = line.context() instanceof Nodes.Paragraph
 
         lazy = line.length() > 0 && isLastItemParagraph
         setext = line.length() === 2 && isLastItemParagraph

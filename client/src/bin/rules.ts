@@ -1,12 +1,4 @@
-import { Stack } from "../converter"
-import {
-    createBlockqoute,
-    createHeading,
-    createList,
-    createListItem,
-    createParagraph,
-    createThematicBreak,
-} from "./definitions"
+import * as Nodes from "./definitions.tsx"
 
 export const SYMBOLS = {
     SPACE: " ",
@@ -21,9 +13,10 @@ export const SYMBOLS = {
     PLUS: "+",
     EQUAL: "=",
     BACKTICK: "`",
+    TILDA: "~",
 } as const
 
-type ParsedResult = [Stack, number]
+type ParsedResult = [Nodes.MarkNode[], number]
 type BoolParsedResult = [boolean, number]
 
 export function parseHeading(input: string, start: number): ParsedResult {
@@ -36,34 +29,47 @@ export function parseHeading(input: string, start: number): ParsedResult {
     const hashEnd = start + hashEndDelta
 
     if (hashEndDelta <= 6 && input.length > hashEnd && input[hashEnd] === " ") {
-        return [[createHeading(hashEndDelta, "")], hashEnd]
+        return [[new Nodes.Heading(hashEndDelta)], hashEnd]
     }
 
-    return [[createParagraph("")], start - 1]
+    return [[new Nodes.Paragraph()], start - 1]
 }
 
 export function parseBlockquote(input: string, start: number): ParsedResult {
-    return [[createBlockqoute()], start]
+    return [[new Nodes.Blockquote()], start]
 }
 
-export function parseCodeBlockEnd(input: string, start: number): BoolParsedResult {
-    if (input.length < start + 2) return [false, start]
+export function parseCodeBlockContinuation(
+    input: string,
+    start: number,
+    symbol: Nodes.CodeBlockSymbol,
+    length: number
+): ParsedResult {
+    const nodes = [new Nodes.CodeBlock(symbol, length, "", false)]
 
-    if (input.slice(start, start + 3) !== SYMBOLS.BACKTICK.repeat(3)) return [false, start]
+    if (input.slice(start, start + length) !== symbol.repeat(length)) {
+        return [nodes, start]
+    }
 
-    for (let i = start + 3; i < input.length; i++) {
+    let isBroken = false
+
+    for (let i = start + length; i < input.length; i++) {
         switch (input[i]) {
+            case symbol:
+                if (isBroken) return [nodes, start]
+                break
             case SYMBOLS.TAB:
             case SYMBOLS.SPACE:
+                isBroken = true
                 break
             case SYMBOLS.NEWLINE:
-                return [true, i]
+                return [[], i]
             default:
-                return [false, start]
+                return [nodes, start]
         }
     }
 
-    return [false, start]
+    return [[], input.length]
 }
 
 export function parseUnorderedList(input: string, start: number, indentBefore: number): ParsedResult {
@@ -87,7 +93,7 @@ export function parseUnorderedList(input: string, start: number, indentBefore: n
     }
 
     return [
-        [createList(), createListItem(indent + indentBefore)],
+        [new Nodes.List(), new Nodes.ListItem(indent + indentBefore)],
         end + 1,
     ]
 }
@@ -120,7 +126,7 @@ export function parseThematicBreak(
 
     if (symbolCount < 3) return null
 
-    return [[createThematicBreak()], i - 1]
+    return [[new Nodes.ThematicBreak()], i - 1]
 }
 
 type SettextSymbol = typeof SYMBOLS.MINUS | typeof SYMBOLS.EQUAL
