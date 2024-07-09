@@ -6,24 +6,6 @@ export interface MarkNode {
     toJSX: () => JSX.Element
 }
 
-export function isBlockNode(node: MarkNode) {
-    return (
-        node instanceof MarkDocument ||
-        node instanceof Blockquote ||
-        node instanceof List ||
-        node instanceof ListItem
-    )
-}
-
-export function isContentNode(node: MarkNode) {
-    return (
-        node instanceof Paragraph ||
-        node instanceof CodeBlock ||
-        node instanceof IndentedCodeBlock ||
-        node instanceof Heading
-    )
-}
-
 export abstract class ParentMarkNode implements MarkNode {
     constructor(mergeable: boolean) {
         this.children = []
@@ -58,11 +40,7 @@ export class MarkDocument extends ParentMarkNode {
     }
 
     toJSX() {
-        return (
-            <div>
-                {this.children.map(node => node.toJSX())}
-            </div >
-        )
+        return <div>{this.children.map((node) => node.toJSX())}</div>
     }
 }
 
@@ -74,23 +52,36 @@ export class Blockquote extends ParentMarkNode {
     toJSX() {
         return (
             <blockquote style={{ borderLeft: "3px white solid", margin: "0 0 0 10px" }}>
-                {this.children.map(node => node.toJSX())}
+                {this.children.map((node) => node.toJSX())}
             </blockquote>
         )
     }
 }
 
-export class List extends ParentMarkNode {
+export class UnorderedList extends ParentMarkNode {
     constructor() {
         super(true)
     }
 
     toJSX() {
-        return (
-            <ul>
-                {this.children.map(node => node.toJSX())}
-            </ul>
-        )
+        return <ul>{this.children.map((node) => node.toJSX())}</ul>
+    }
+}
+
+type OrderListDelimiter = ")" | "."
+
+export class OrderedList extends ParentMarkNode {
+    constructor(start: number, delimiter: OrderListDelimiter) {
+        super(true)
+        this.start = start
+        this.delimiter = delimiter
+    }
+
+    start: number
+    delimiter: OrderListDelimiter
+
+    toJSX() {
+        return <ol start={this.start}>{this.children.map((node) => node.toJSX())}</ol>
     }
 }
 
@@ -103,11 +94,7 @@ export class ListItem extends ParentMarkNode {
     indent: number
 
     toJSX() {
-        return (
-            <li>
-                {this.children.map(node => node.toJSX())}
-            </li>
-        )
+        return <li>{this.children.map((node) => node.toJSX())}</li>
     }
 }
 
@@ -142,9 +129,7 @@ export class IndentedCodeBlock extends ContentMarkNode {
     toJSX() {
         return (
             <pre>
-                <code>
-                    {this.content}
-                </code>
+                <code>{this.content}</code>
             </pre>
         )
     }
@@ -152,8 +137,13 @@ export class IndentedCodeBlock extends ContentMarkNode {
 
 export type CodeBlockSymbol = typeof SYMBOLS.BACKTICK | typeof SYMBOLS.TILDA
 
-export class CodeBlock extends ContentMarkNode{
-    constructor(symbol: CodeBlockSymbol, length: number, content: string = "", opening: boolean = false) {
+export class CodeBlock extends ContentMarkNode {
+    constructor(
+        symbol: CodeBlockSymbol,
+        length: number,
+        content: string = "",
+        opening: boolean = false
+    ) {
         super(false, content)
         this.opening = opening
         this.symbol = symbol
@@ -167,9 +157,7 @@ export class CodeBlock extends ContentMarkNode{
     toJSX() {
         return (
             <pre>
-                <code>
-                    {this.content}
-                </code>
+                <code>{this.content}</code>
             </pre>
         )
     }
@@ -184,5 +172,27 @@ export class ThematicBreak implements MarkNode {
 
     toJSX() {
         return <hr />
+    }
+}
+
+export class CodeSpan extends ContentMarkNode {
+    constructor(content: "") {
+        super(false, content)
+    }
+
+    toJSX() {
+        return <code>{this.content}</code >
+    }
+}
+
+export class HardLineBreak implements MarkNode {
+    constructor() {
+        this.mergeable = false
+    }
+
+    mergeable: false
+
+    toJSX() {
+        return <br />
     }
 }

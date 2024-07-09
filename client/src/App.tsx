@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import './App.css'
-import { parse } from './converter'
+import { useState } from "react"
+import "./App.css"
+import { parse } from "./converter"
 
 function App() {
     const [text, setText] = useState("")
@@ -10,7 +10,7 @@ function App() {
     return (
         <div>
             <textarea
-            id=""
+                id=""
                 name=""
                 value={text}
                 onChange={(e) => setText(e.currentTarget.value)}

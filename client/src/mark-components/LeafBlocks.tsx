@@ -7,28 +7,20 @@ interface Props {
 export function Code({ children }: Props) {
     return (
         <pre>
-            <code>
-                {children}
-            </code>
+            <code>{children}</code>
         </pre>
     )
 }
 
 export function Hr() {
-    return (
-        <hr/>
-    )
+    return <hr />
 }
 
 export function Paragraph({ children }: Props) {
-    return (
-        <p>
-            {children}
-        </p>
-    )
+    return <p>{children}</p>
 }
 
-export function Heading({ children, level }: Props & {level: number}) {
+export function Heading({ children, level }: Props & { level: number }) {
     const elem = React.createElement("h" + level, {}, children)
 
     return elem
